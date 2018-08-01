@@ -1,0 +1,182 @@
+/*  ECE 110 HONORS LAB PROJECT : WALK-IN LIGHTS
+ *    
+ *   This code incorporates all components of out project: the passive infrared sensor, the   
+ *  optical detector, and the phototransistor. Each sensor's role in the project is 
+ *  detailed below. Current problems with this prototype that need consideration 
+ *  when building the large scale implementation are also detailed below. 
+ *  --------------------------------------------------------------------------------------- 
+ *   QRD1114(optical detector) - This detector senses the initial trigger that will turn on  
+ *   the lights. The only component of this system that can cause the lights to turn on is  
+ *   this initial trigger, which will allow us to minimize energy consumption in the long  
+ *   run. If a rapid motion, such as a door opening, passes the optical detector, the lights 
+ *   will turn on, in the case that the room is dark too.   
+ *    
+ *   Phototransistor - This sensor works in conjunction with the optical detector to determine  
+ *   the case for when the lights will be turned on. If the room is dark, the phototransistor  
+ *   analog input voltage will be above a certain threshold, allowing us to test for the  
+ *   current environment lighting. If and only if the phototransistor voltage indicates that the  
+ *   room is dark AND the optical detector voltage indicates that a trigger event occured,  
+ *   THEN the lights will turn on. 
+ *   
+ *   PIR(passive infrared sensor) - The PIR allows us to constantly check a condition to  
+ *   determine if the lights should be kept on. If this condition of motion is not met, 
+ *   the lights will be turned off. The PIR is connected to the digital input of the Arduino. 
+ *   Hence, it returns a value of HIGH or LOW, LOW being when it detects motion. So for as  
+ *   long as motion is detected in the room, the LED will be kept on for a short period of time 
+ *   before testing this condition again.  
+ *   ----------------------------------------------------------------------------------------- 
+ *   Current Problems: The PIR we are using only picks up motion at a short range.
+ *   In order to fix this, we will either need a more high quality PIR or we will need to  
+ *   find a new scanning mechanism that will allow us to detect small motions with more  
+ *   precision. 
+ */
+
+#define SCANNING_PERIOD 10000  
+#define LED_ON_TIME 30000  
+#define BUTTON_CHECK_TIME 2000
+
+// assign all analog input/digital input/output pins to variable names
+const int OPTICAL_DETECTOR = A0; // QRD1114 optical detector
+const int MOTION_DETECTOR = 2; // PIR sensor
+const int PHOTO_TRANSISTOR = A1; // Phototransistor  
+const int RED_PIN = 9; 
+const int GREEN_PIN = 10; 
+const int BLUE_PIN = 11;  
+const int PUSH_BUTTON = 8; 
+
+// global variables used for timing loops and getting push button feedback
+unsigned long startTime; 
+unsigned long currentTime; 
+int button_state;  
+
+// global variables to maintain the state of color even after LED is turned off  
+int red_color = LOW; 
+int blue_color = LOW; 
+int green_color = LOW;  
+
+void setup() {
+  // put your setup code here, to run once:
+  Serial.begin(9600);
+  pinMode(OPTICAL_DETECTOR, INPUT);
+  pinMode(PHOTO_TRANSISTOR, INPUT);
+  // the PIR sensor needs an internal pullup resistor to pull voltages to one end or the other
+  pinMode(MOTION_DETECTOR, INPUT_PULLUP);
+  pinMode(RED_PIN,OUTPUT); 
+  pinMode(BLUE_PIN,OUTPUT); 
+  pinMode(GREEN_PIN,OUTPUT); 
+  pinMode(PUSH_BUTTON,INPUT);
+
+  // initially, the LED is off
+  ledOff(); 
+}
+
+void loop() {
+  //turn the led off
+  ledOff();
+
+  // read an analog voltage from the optical detector and turn it into a voltage from 0-5V
+  float is_trigger = analogRead(OPTICAL_DETECTOR) * 5.0 / 1023;
+  float is_light = analogRead(PHOTO_TRANSISTOR) * 5.0 / 1024;
+
+  // if the optical detector was triggered by a motion and the current light setting is dark, turn the lights on
+  if (is_trigger < 2.5 && is_light > 1) {   
+    Serial.println("Lights on!"); 
+    //keep light on for a period of time and then scan for motion
+    onLed(); 
+    
+    // while motion is detected, keep it on for another time period and scan again
+    while (is_motion()) {
+      Serial.println("Motion detected! Keep lights on!");
+      // keep light on for a period of time
+      onLed(); 
+    } 
+    
+    // if motion is not detected, turn the lights off by repeating the loop 
+    Serial.println("No motion detected, turning off...");
+  }
+} 
+
+// function to scan for motion for set amount of seconds 
+// returns true if motion detected during period 
+// returns false if no motion detected during period
+bool is_motion(){  
+    // get the start time and current time
+    startTime = millis();  
+    currentTime = millis(); 
+    // scan for a period of defined time 
+    Serial.println("Scanning for motion...");
+    while(currentTime - startTime < SCANNING_PERIOD){  
+      // read from the pir    
+      int motion = digitalRead(MOTION_DETECTOR);  
+      // if motion is detected during this period, return true
+      if (motion == LOW){
+        return true;  
+      }    
+      currentTime = millis(); 
+  }  
+  // otherwise return false
+  return false;  
+}   
+
+// function to turn on the LED to the current state of it's color for a set amount of time   
+void onLed(){    
+  startTime == millis(); 
+  currentTime == millis(); 
+  changeColor(red_color,green_color,blue_color); 
+
+  int color = 0; 
+  while (currentTime - startTime < LED_ON_TIME){   
+    while(checkButton()){    
+      switch(color){
+        case 0:  
+        changeColor(255,255,255);   
+        break; 
+        case 1: 
+        changeColor(154,198,109); 
+        break;  
+        case 2: 
+        changeColor(100,100,100); 
+        break; 
+        case 3: 
+        changeColor(155,255,0); 
+        break; 
+      }
+      if(color == 3){ color = 0;}
+      else {color++;} 
+      delay(1000);
+    } 
+    currentTime = millis(); 
+  }
+} 
+
+// function to turn the led off 
+void ledOff(){ 
+     digitalWrite(RED_PIN,HIGH); 
+     digitalWrite(BLUE_PIN,HIGH); 
+     digitalWrite(GREEN_PIN,HIGH);
+}
+
+// function to determine whether or not the button has been pressed during a period of time
+bool checkButton(){ 
+  unsigned long start; 
+  unsigned long current; 
+  start = millis(); 
+  current = millis();   
+  while(current - start < BUTTON_CHECK_TIME){ 
+    if(digitalRead(PUSH_BUTTON) == HIGH){
+      return true; 
+    }
+    current = millis();  
+  }    
+  return false; 
+} 
+
+// function to change the color of an LED based on three rgb input values 
+void changeColor(int red,int green,int blue){ 
+  analogWrite(RED_PIN,red); 
+  analogWrite(BLUE_PIN,blue); 
+  analogWrite(GREEN_PIN,green);  
+  red_color = red; 
+  blue_color = blue; 
+  green_color = green; 
+}
